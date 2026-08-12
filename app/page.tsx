@@ -1,6 +1,13 @@
 "use client";
 
-import { useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useId, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  clearDiagnosticLogs,
+  createOperationId,
+  downloadDiagnosticLogs,
+  initializeBrowserLogging,
+  logRun,
+} from "./browser-logger.mjs";
 
 type Platform = "通用" | "Windows" | "Android";
 type Category =
@@ -778,8 +785,10 @@ const CATEGORIES: Category[] = [
 ];
 
 function DemoRenderer({ type }: { type: string }) {
+  const dialogTitleId = useId();
   const [active, setActive] = useState(false);
   const [open, setOpen] = useState(false);
+  const [splitPage, setSplitPage] = useState<"首页" | "设置">("首页");
   const [text, setText] = useState("");
   const [choice, setChoice] = useState("标准");
   const [value, setValue] = useState(48);
@@ -787,8 +796,18 @@ function DemoRenderer({ type }: { type: string }) {
   const [page, setPage] = useState(1);
   const [count, setCount] = useState(3);
   const [selected, setSelected] = useState("项目 A");
+  const [canvasTool, setCanvasTool] = useState<"选择" | "矩形">("选择");
+  const [canvasObjects, setCanvasObjects] = useState([{ id: 1, x: 68, y: 56 }]);
+  const [selectedCanvasObject, setSelectedCanvasObject] = useState<number | null>(1);
+  const [draggingCanvasObject, setDraggingCanvasObject] = useState<number | null>(null);
+  const [dateMode, setDateMode] = useState<"内嵌日历" | "滚轮日期">("内嵌日历");
+  const [dateYear, setDateYear] = useState(2026);
+  const [dateMonth, setDateMonth] = useState(8);
+  const [dateDay, setDateDay] = useState(20);
   const [message, setMessage] = useState("等待操作");
   const [showPassword, setShowPassword] = useState(false);
+  const [treeProjectOpen, setTreeProjectOpen] = useState(true);
+  const [treeComponentsOpen, setTreeComponentsOpen] = useState(true);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   const result = (content: string) => (
@@ -822,13 +841,13 @@ function DemoRenderer({ type }: { type: string }) {
     case "split-button":
       return (
         <div className="demo-stack">
-          <div className="split-button"><button onClick={() => setMessage("已导出 PDF")}>导出 PDF</button><details><summary aria-label="其他导出格式">⌄</summary><div className="mini-menu"><button onClick={() => setMessage("已导出 PNG")}>导出 PNG</button><button onClick={() => setMessage("已复制链接")}>复制链接</button></div></details></div>
+          <div className="split-button"><button onClick={() => setMessage("已导出 PDF")}>导出 PDF</button><details><summary aria-label="其他导出格式"><svg className="split-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg></summary><div className="mini-menu"><button onClick={() => setMessage("已导出 PNG")}>导出 PNG</button><button onClick={() => setMessage("已复制链接")}>复制链接</button></div></details></div>
           {result(message)}
         </div>
       );
     case "dropdown-button":
       return (
-        <div className="demo-stack"><details className="dropdown-demo"><summary className="ui-button">新建　⌄</summary><div className="mini-menu"><button onClick={() => setMessage("已新建文件")}>文件</button><button onClick={() => setMessage("已新建文件夹")}>文件夹</button></div></details>{result(message)}</div>
+        <div className="demo-stack"><details className="dropdown-demo dropdown-button-demo"><summary className="ui-button"><span>新建</span><svg className="dropdown-chevron" aria-hidden="true" viewBox="0 0 16 16"><path d="M4 6l4 4 4-4" /></svg></summary><div className="mini-menu"><button onClick={() => setMessage("已新建文件")}>文件</button><button onClick={() => setMessage("已新建文件夹")}>文件夹</button></div></details>{result(message)}</div>
       );
     case "fab":
       return <div className="demo-stack"><button className="fab" aria-label="新建项目" onClick={() => setMessage("已新建项目")}>＋</button>{result(message)}</div>;
@@ -848,8 +867,21 @@ function DemoRenderer({ type }: { type: string }) {
       return <label className="field">收件人<input list="people-list" value={text} onChange={(event) => setText(event.target.value)} placeholder="输入姓名" /><datalist id="people-list"><option value="林晓明" /><option value="王雨青" /><option value="陈安" /></datalist>{result(text || "选择或输入姓名")}</label>;
     case "number":
       return <div className="demo-stack"><div className="number-box"><button aria-label="减少" onClick={() => setValue(Math.max(0, value - 1))}>−</button><input aria-label="数量" type="number" min="0" max="99" value={value} onChange={(event) => setValue(Number(event.target.value))} /><button aria-label="增加" onClick={() => setValue(Math.min(99, value + 1))}>＋</button></div>{result(`当前数值：${value}`)}</div>;
-    case "date":
-      return <label className="field">选择日期<input type="date" onChange={(event) => setText(event.target.value)} />{result(text || "尚未选择日期")}</label>;
+    case "date": {
+      const daysInMonth = new Date(dateYear, dateMonth, 0).getDate();
+      const firstWeekday = new Date(dateYear, dateMonth - 1, 1).getDay();
+      const calendarCells = [...Array(firstWeekday).fill(null), ...Array.from({ length: daysInMonth }, (_, index) => index + 1)];
+      const updateMonth = (offset: number) => {
+        const next = new Date(dateYear, dateMonth - 1 + offset, 1);
+        const nextYear = next.getFullYear();
+        const nextMonth = next.getMonth() + 1;
+        setDateYear(nextYear);
+        setDateMonth(nextMonth);
+        setDateDay(Math.min(dateDay, new Date(nextYear, nextMonth, 0).getDate()));
+      };
+      const formattedDate = `${dateYear}-${String(dateMonth).padStart(2, "0")}-${String(dateDay).padStart(2, "0")}`;
+      return <div className="date-picker-demo"><div className="date-mode-switch" role="tablist" aria-label="日期选择方式">{(["内嵌日历", "滚轮日期"] as const).map((mode) => <button key={mode} role="tab" aria-selected={dateMode === mode} className={dateMode === mode ? "selected" : ""} onClick={() => setDateMode(mode)}>{mode}</button>)}</div>{dateMode === "内嵌日历" ? <section className="inline-calendar" aria-label={`${dateYear} 年 ${dateMonth} 月`}><header><button aria-label="上一个月" onClick={() => updateMonth(-1)}>‹</button><strong>{dateYear} 年 {dateMonth} 月</strong><button aria-label="下一个月" onClick={() => updateMonth(1)}>›</button></header><div className="calendar-weekdays" aria-hidden="true">{["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day}>{day}</span>)}</div><div className="calendar-days">{calendarCells.map((day, index) => day === null ? <span key={`blank-${index}`} /> : <button key={day} className={dateDay === day ? "selected" : ""} aria-pressed={dateDay === day} aria-label={`${dateMonth} 月 ${day} 日`} onClick={() => setDateDay(day)}>{day}</button>)}</div></section> : <section className="date-wheel" aria-label="滚轮日期选择器"><label><span>年</span><select aria-label="选择年份" size={5} value={dateYear} onChange={(event) => { const year = Number(event.target.value); setDateYear(year); setDateDay(Math.min(dateDay, new Date(year, dateMonth, 0).getDate())); }}>{Array.from({ length: 9 }, (_, index) => 2022 + index).map((year) => <option key={year} value={year}>{year}</option>)}</select></label><label><span>月</span><select aria-label="选择月份" size={5} value={dateMonth} onChange={(event) => { const month = Number(event.target.value); setDateMonth(month); setDateDay(Math.min(dateDay, new Date(dateYear, month, 0).getDate())); }}>{Array.from({ length: 12 }, (_, index) => index + 1).map((month) => <option key={month} value={month}>{String(month).padStart(2, "0")}</option>)}</select></label><label><span>日</span><select aria-label="选择日期" size={5} value={dateDay} onChange={(event) => setDateDay(Number(event.target.value))}>{Array.from({ length: daysInMonth }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{String(day).padStart(2, "0")}</option>)}</select></label></section>}{result(`已选择：${formattedDate}`)}</div>;
+    }
     case "time":
       return <label className="field">提醒时间<input type="time" onChange={(event) => setText(event.target.value)} />{result(text || "尚未选择时间")}</label>;
     case "color":
@@ -859,7 +891,7 @@ function DemoRenderer({ type }: { type: string }) {
     case "radio":
       return <fieldset className="choice-group"><legend>画质</legend>{["标准", "高清", "原始"].map((item) => <label key={item}><input type="radio" name="quality-demo" checked={choice === item} onChange={() => setChoice(item)} />{item}</label>)}{result(`当前选择：${choice}`)}</fieldset>;
     case "switch":
-      return <div className="demo-stack"><label className="switch-row"><span>自动保存</span><input className="switch" type="checkbox" checked={active} onChange={(event) => setActive(event.target.checked)} /></label>{result(active ? "自动保存已开启" : "自动保存已关闭")}</div>;
+      return <div className="demo-stack"><label className="switch-row"><span>自动保存</span><input className="switch" type="checkbox" role="switch" aria-checked={active} checked={active} onChange={(event) => setActive(event.target.checked)} /></label>{result(active ? "自动保存已开启" : "自动保存已关闭")}</div>;
     case "slider":
       return <label className="field">缩放比例<input type="range" min="50" max="150" value={value} onChange={(event) => setValue(Number(event.target.value))} />{result(`${value}%`)}</label>;
     case "range-slider":
@@ -889,7 +921,7 @@ function DemoRenderer({ type }: { type: string }) {
     case "drawer":
       return <div className="drawer-stage"><button className="ui-button" onClick={() => setOpen(true)}>☰ 打开导航</button>{open && <><button className="drawer-scrim" aria-label="关闭导航" onClick={() => setOpen(false)} /><aside className="drawer-panel"><strong>应用导航</strong>{["首页", "下载", "设置"].map((item) => <button key={item} onClick={() => { setChoice(item); setOpen(false); }}>{item}</button>)}</aside></>}{result(`当前页面：${choice}`)}</div>;
     case "tree":
-      return <div className="tree-demo"><details open><summary>项目文件</summary><button onClick={() => setSelected("首页.tsx")}>首页.tsx</button><details><summary>组件</summary><button onClick={() => setSelected("按钮.tsx")}>按钮.tsx</button></details></details>{result(`已选择：${selected}`)}</div>;
+      return <div className="tree-demo"><div className="tree-viewport" role="tree" aria-label="项目文件"><button type="button" className="tree-node tree-branch" role="treeitem" aria-selected={false} aria-expanded={treeProjectOpen} onClick={() => setTreeProjectOpen(!treeProjectOpen)}><span className="tree-chevron" aria-hidden="true">{treeProjectOpen ? "▾" : "▸"}</span><span>项目文件</span></button>{treeProjectOpen && <div className="tree-children" role="group"><button type="button" className={`tree-node tree-leaf ${selected === "首页.tsx" ? "selected" : ""}`} role="treeitem" aria-selected={selected === "首页.tsx"} onClick={() => setSelected("首页.tsx")}><span className="tree-chevron" aria-hidden="true" /><span>首页.tsx</span></button><button type="button" className="tree-node tree-branch" role="treeitem" aria-selected={false} aria-expanded={treeComponentsOpen} onClick={() => setTreeComponentsOpen(!treeComponentsOpen)}><span className="tree-chevron" aria-hidden="true">{treeComponentsOpen ? "▾" : "▸"}</span><span>组件</span></button>{treeComponentsOpen && <div className="tree-children" role="group"><button type="button" className={`tree-node tree-leaf ${selected === "按钮.tsx" ? "selected" : ""}`} role="treeitem" aria-selected={selected === "按钮.tsx"} onClick={() => setSelected("按钮.tsx")}><span className="tree-chevron" aria-hidden="true" /><span>按钮.tsx</span></button></div>}</div>}</div>{result(`已选择：${selected}`)}</div>;
     case "back":
       return <div className="demo-stack"><div className="page-trail"><button disabled={page === 1} onClick={() => setPage(page - 1)}>← 后退</button><span>页面 {page}</span><button disabled={page === 3} onClick={() => setPage(page + 1)}>前进 →</button></div>{result(`当前位置：页面 ${page}`)}</div>;
     case "card":
@@ -907,31 +939,31 @@ function DemoRenderer({ type }: { type: string }) {
       return <div className="demo-stack"><div className="carousel"><button aria-label="上一个" onClick={() => setPage((page + 2) % 3)}>‹</button><div><strong>{slides[page % 3]}</strong><span>{page % 3 + 1} / 3</span></div><button aria-label="下一个" onClick={() => setPage((page + 1) % 3)}>›</button></div></div>;
     }
     case "splitview":
-      return <div className="demo-stack"><div className={`split-view ${open ? "open" : ""}`}><aside><button aria-label="切换窗格" onClick={() => setOpen(!open)}>☰</button>{open && <><button>首页</button><button>设置</button></>}</aside><div>主内容区</div></div>{result(open ? "窗格已展开" : "窗格已收起")}</div>;
+      return <div className="demo-stack"><div className={`split-view ${open ? "open" : ""}`}><aside><button type="button" aria-label={open ? "收起窗格" : "展开窗格"} aria-expanded={open} onClick={() => setOpen(!open)}>☰</button>{open && <>{(["首页", "设置"] as const).map((item) => <button type="button" key={item} className={splitPage === item ? "selected" : ""} aria-current={splitPage === item ? "page" : undefined} onClick={() => setSplitPage(item)}>{item}</button>)}</>}</aside><section className="split-content" aria-live="polite"><strong>{splitPage}</strong><span>{splitPage === "首页" ? "概览与最近项目" : "外观与通知设置"}</span></section></div>{result(`${open ? "窗格已展开" : "窗格已收起"} · 当前页面：${splitPage}`)}</div>;
     case "listdetails":
       return <div className="list-details"><div>{["按钮", "开关", "滑块"].map((item) => <button key={item} className={selected === item ? "selected" : ""} onClick={() => setSelected(item)}>{item}</button>)}</div><article><strong>{selected}</strong><p>这里显示当前选择项目的详细信息。</p></article></div>;
     case "avatar":
       return <div className="demo-stack"><button className="persona" onClick={() => setActive(!active)}><span className="avatar">林</span><span><strong>林晓明</strong><small>{active ? "在线" : "离线"}</small></span><i className={active ? "online" : ""} /></button>{result(active ? "状态：在线" : "状态：离线")}</div>;
     case "media":
-      return <div className="demo-stack"><div className="media-demo"><button aria-label={active ? "暂停" : "播放"} onClick={() => setActive(!active)}>{active ? "Ⅱ" : "▶"}</button><input aria-label="播放进度" type="range" min="0" max="100" value={value} onChange={(event) => setValue(Number(event.target.value))} /><span>{value}%</span></div>{result(active ? "正在播放" : "已暂停")}</div>;
+      return <div className="demo-stack"><div className="media-demo"><div className="media-controls-row"><button aria-label={active ? "暂停" : "播放"} onClick={() => setActive(!active)}>{active ? <svg className="media-control-icon" aria-hidden="true" viewBox="0 0 20 20"><rect x="5" y="4" width="3.5" height="12" rx="1" /><rect x="11.5" y="4" width="3.5" height="12" rx="1" /></svg> : <svg className="media-control-icon" aria-hidden="true" viewBox="0 0 20 20"><path d="M6.5 4.7a1 1 0 0 1 1.52-.85l8.1 5.3a1 1 0 0 1 0 1.7l-8.1 5.3a1 1 0 0 1-1.52-.85V4.7Z" /></svg>}</button><input aria-label="播放进度" type="range" min="0" max="100" value={value} onChange={(event) => setValue(Number(event.target.value))} /><output aria-label="当前播放进度">{value}%</output></div></div>{result(active ? "正在播放" : "已暂停")}</div>;
     case "canvas":
-      return <div className="demo-stack"><div className="canvas-tools"><button className={choice === "选择" ? "selected" : ""} onClick={() => setChoice("选择")}>↖ 选择</button><button className={choice === "矩形" ? "selected" : ""} onClick={() => setChoice("矩形")}>□ 矩形</button></div><button className="canvas-demo" onClick={() => setCount(count + 1)}><span style={{ left: `${20 + (count % 4) * 15}%`, top: `${22 + (count % 3) * 18}%` }}>{choice === "矩形" ? "□" : "＋"}</span><small>点击画布</small></button>{result(`${choice}工具 · 对象 ${count} 个`)}</div>;
+      return <div className="demo-stack canvas-editor-demo"><div className="canvas-tools" role="toolbar" aria-label="画布工具"><button className={canvasTool === "选择" ? "selected" : ""} aria-pressed={canvasTool === "选择"} onClick={() => setCanvasTool("选择")}>↖ 选择</button><button className={canvasTool === "矩形" ? "selected" : ""} aria-pressed={canvasTool === "矩形"} onClick={() => setCanvasTool("矩形")}>□ 矩形</button><button className="canvas-delete" disabled={selectedCanvasObject === null} onClick={() => { if (selectedCanvasObject !== null) { setCanvasObjects(canvasObjects.filter((item) => item.id !== selectedCanvasObject)); setSelectedCanvasObject(null); } }}>删除</button></div><div className={`canvas-demo tool-${canvasTool === "选择" ? "select" : "rectangle"}`} role="application" aria-label={canvasTool === "矩形" ? "画布：点击空白处创建矩形" : "画布：选择并拖动矩形"} onClick={(event) => { if (canvasTool === "矩形") { const bounds = event.currentTarget.getBoundingClientRect(); const nextId = canvasObjects.reduce((largest, item) => Math.max(largest, item.id), 0) + 1; const nextObject = { id: nextId, x: Math.max(14, Math.min(86, ((event.clientX - bounds.left) / bounds.width) * 100)), y: Math.max(14, Math.min(86, ((event.clientY - bounds.top) / bounds.height) * 100)) }; setCanvasObjects([...canvasObjects, nextObject]); setSelectedCanvasObject(nextId); } else { setSelectedCanvasObject(null); } }}><small className="canvas-hint">{canvasTool === "矩形" ? "点击空白处创建矩形" : "选择后拖动矩形"}</small>{canvasObjects.map((item) => <button type="button" key={item.id} className={`canvas-demo-object ${selectedCanvasObject === item.id ? "selected" : ""}`} aria-label={`矩形 ${item.id}${selectedCanvasObject === item.id ? "，已选择，可拖动" : ""}`} aria-pressed={selectedCanvasObject === item.id} style={{ left: `calc(${item.x}% - 32px)`, top: `calc(${item.y}% - 22px)` }} onPointerDown={(event) => { if (canvasTool === "选择") { event.stopPropagation(); event.currentTarget.setPointerCapture(event.pointerId); setSelectedCanvasObject(item.id); setDraggingCanvasObject(item.id); } }} onPointerMove={(event) => { if (canvasTool === "选择" && draggingCanvasObject === item.id) { const canvas = event.currentTarget.parentElement; if (!canvas) return; const bounds = canvas.getBoundingClientRect(); const x = Math.max(14, Math.min(86, ((event.clientX - bounds.left) / bounds.width) * 100)); const y = Math.max(14, Math.min(86, ((event.clientY - bounds.top) / bounds.height) * 100)); setCanvasObjects((current) => current.map((object) => object.id === item.id ? { ...object, x, y } : object)); } }} onPointerUp={(event) => { if (draggingCanvasObject === item.id) { event.currentTarget.releasePointerCapture(event.pointerId); setDraggingCanvasObject(null); } }} onClick={(event) => event.stopPropagation()}><span aria-hidden="true">{selectedCanvasObject === item.id ? "□" : ""}</span></button>)}</div>{result(canvasTool === "矩形" ? `矩形工具 · 对象 ${canvasObjects.length} 个 · 点击画布创建` : draggingCanvasObject !== null ? `正在移动矩形 ${draggingCanvasObject}` : `选择工具 · ${selectedCanvasObject === null ? "未选择对象" : `已选中矩形 ${selectedCanvasObject}`} · 对象 ${canvasObjects.length} 个`)}</div>;
     case "dialog":
-      return <div className="demo-stack"><button className="ui-button primary" onClick={() => dialogRef.current?.showModal()}>打开对话框</button><dialog ref={dialogRef} className="dialog-demo"><form method="dialog"><strong>确认删除？</strong><p>这个示例不会真正删除任何内容。</p><div><button value="cancel">取消</button><button className="danger" value="confirm">确认删除</button></div></form></dialog>{result("等待确认")}</div>;
+      return <div className="demo-stack"><button className="ui-button primary" onClick={() => dialogRef.current?.showModal()}>打开对话框</button><dialog ref={dialogRef} className="dialog-demo" aria-labelledby={dialogTitleId} onClose={(event) => setMessage(event.currentTarget.returnValue === "confirm" ? "已确认删除" : "已取消")} onClick={(event) => { if (event.target === event.currentTarget) event.currentTarget.close("cancel"); }}><form method="dialog"><strong id={dialogTitleId}>确认删除？</strong><p>这个示例不会真正删除任何内容。</p><div><button value="cancel">取消</button><button className="danger" value="confirm">确认删除</button></div></form></dialog>{result(message)}</div>;
     case "popover":
       return <div className="demo-stack"><details className="popover-demo"><summary className="ui-button">显示格式</summary><div><strong>文字格式</strong><button onClick={() => setChoice("粗体")}>B</button><button onClick={() => setChoice("斜体")}>I</button><button onClick={() => setChoice("下划线")}>U</button></div></details>{result(`当前格式：${choice}`)}</div>;
     case "tooltip":
       return <div className="tooltip-wrap"><button className="icon-action" aria-describedby="tooltip-text">⌕</button><span id="tooltip-text" role="tooltip">搜索当前页面</span></div>;
     case "menu":
-      return <div className="demo-stack"><details className="dropdown-demo"><summary className="ui-button">更多操作 ⋯</summary><div className="mini-menu"><button onClick={() => setMessage("已重命名")}>重命名</button><button onClick={() => setMessage("已创建副本")}>创建副本</button><button onClick={() => setMessage("已归档")}>归档</button></div></details>{result(message)}</div>;
+      return <div className="demo-stack"><details className="dropdown-demo context-menu-demo"><summary className="ui-button">更多操作 ⋯</summary><div className="mini-menu"><button onClick={() => setMessage("已重命名")}>重命名</button><button onClick={() => setMessage("已创建副本")}>创建副本</button><button onClick={() => setMessage("已归档")}>归档</button></div></details>{result(message)}</div>;
     case "bottomsheet":
-      return <div className="sheet-stage"><button className="ui-button primary" onClick={() => setOpen(true)}>选择排序方式</button>{open && <><button className="sheet-scrim" aria-label="关闭底部工作表" onClick={() => setOpen(false)} /><section className="bottom-sheet"><strong>排序方式</strong>{["最近修改", "名称", "大小"].map((item) => <button key={item} onClick={() => { setChoice(item); setOpen(false); }}>{item}{choice === item ? " ✓" : ""}</button>)}</section></>}{result(`当前排序：${choice}`)}</div>;
+      return <div className="sheet-stage"><div className="sheet-launch"><button className="ui-button primary" onClick={() => setOpen(true)}>选择排序方式</button>{result(`当前排序：${choice}`)}</div>{open && <><button className="sheet-scrim" aria-label="关闭底部工作表" onClick={() => setOpen(false)} /><section className="bottom-sheet" aria-label="排序方式"><strong>排序方式</strong>{["最近修改", "名称", "大小"].map((item) => <button key={item} className={choice === item ? "selected" : ""} onClick={() => { setChoice(item); setOpen(false); }}>{item}<span aria-hidden="true">{choice === item ? "✓" : ""}</span></button>)}</section></>}</div>;
     case "teaching":
-      return <div className="demo-stack"><button className="ui-button" onClick={() => setOpen(!open)}>查看新功能</button>{open && <div className="teaching-tip"><strong>试试全局搜索</strong><p>按 Ctrl + K 可以从任何页面查找术语。</p><button onClick={() => setOpen(false)}>知道了</button></div>}</div>;
+      return <div className="demo-stack teaching-demo"><button className="ui-button" aria-expanded={open} onClick={() => setOpen(!open)}>查看新功能</button><div className="teaching-tip-slot">{open && <div className="teaching-tip"><strong>试试全局搜索</strong><p>按 Ctrl + K 可以从任何页面查找术语。</p><button onClick={() => setOpen(false)}>知道了</button></div>}</div></div>;
     case "notification":
       return <div className="demo-stack"><button className="ui-button" onClick={() => setOpen(true)}>模拟通知</button>{open && <aside className="notification-demo"><div><strong>UI 图鉴</strong><span>术语数据已更新</span></div><button aria-label="关闭通知" onClick={() => setOpen(false)}>×</button></aside>}</div>;
     case "snackbar":
-      return <div className="demo-stack"><button className="ui-button primary" onClick={() => setOpen(true)}>删除项目</button>{open && <div className="snackbar"><span>项目已删除</span><button onClick={() => { setOpen(false); setMessage("删除已撤销"); }}>撤销</button></div>}{result(message)}</div>;
+      return <div className="demo-stack snackbar-demo"><button className="ui-button primary" onClick={() => { setOpen(true); setMessage("项目已删除"); }}>删除项目</button><div className="snackbar-slot">{open && <div className="snackbar"><span>项目已删除</span><button onClick={() => { setOpen(false); setMessage("删除已撤销"); }}>撤销</button></div>}</div>{result(message)}</div>;
     case "toast":
       return <div className="demo-stack"><button className="ui-button" onClick={() => setOpen(true)}>显示 Toast</button>{open && <div className="toast"><span>链接已复制</span><button aria-label="关闭" onClick={() => setOpen(false)}>×</button></div>}</div>;
     case "infobar":
@@ -951,21 +983,16 @@ function DemoRenderer({ type }: { type: string }) {
   }
 }
 
-function TermCard({ term }: { term: Term }) {
+function TermCard({ term, showDetails }: { term: Term; showDetails: boolean }) {
   const source = SOURCES[term.source];
   return (
     <article className="term-card" id={`term-${term.id}`}>
       <header>
-        <div className="term-kickers"><span className={`platform ${term.platform.toLowerCase()}`}>{term.platform}</span><span>{term.category}</span></div>
-        <h3>{term.zh}</h3>
-        <p className="english" lang="en">{term.en}</p>
+        <div className="term-title-line"><h3>{term.zh}</h3><p className="english" lang="en">{term.en}</p></div>
         <p>{term.description}</p>
+        <div className="term-meta-line"><div className="term-kickers"><span className={`platform ${term.platform.toLowerCase()}`}>{term.platform}</span><span>{term.category}</span></div>{showDetails && <a className="term-source-link" href={source.href} target="_blank" rel="noreferrer">参考官方目录 ↗</a>}</div>
       </header>
       <div className="demo-well"><DemoRenderer type={term.demo} /></div>
-      <footer>
-        <p><strong>交互：</strong>{term.behavior}</p>
-        <div><span>别名：{term.aliases.join("、")}</span><a href={source.href} target="_blank" rel="noreferrer">参考官方目录 ↗</a></div>
-      </footer>
     </article>
   );
 }
@@ -1058,7 +1085,17 @@ const COMPARISONS = [
   { title: "两种“导航栏”", summary: "应用内目的地导航与系统级返回/主页导航不能混淆。", items: [["Navigation bar", "Android 应用内切换顶级目的地。"], ["System navigation bar", "系统返回、主页、概览或手势区域。"]] },
 ];
 
+const PAGE_TABS = [
+  { id: "atlas", label: "控件图鉴" },
+  { id: "screens", label: "完整界面" },
+  { id: "compare", label: "易混对比" },
+  { id: "sources", label: "资料来源" },
+] as const;
+
+type PageId = (typeof PAGE_TABS)[number]["id"];
+
 export default function Home() {
+  const [activePage, setActivePage] = useState<PageId>("atlas");
   const [draftQuery, setDraftQuery] = useState("");
   const [query, setQuery] = useState("");
   const [platform, setPlatform] = useState<"全部" | Platform>("全部");
@@ -1066,6 +1103,10 @@ export default function Home() {
   const [scene, setScene] = useState<"windows" | "android" | "creative">("windows");
   const [dark, setDark] = useState(false);
   const [composing, setComposing] = useState(false);
+  const [showDetails, setShowDetails] = useState(false);
+  const [logNotice, setLogNotice] = useState("");
+
+  useEffect(() => initializeBrowserLogging(), []);
 
   const filteredTerms = useMemo(() => {
     const needle = query.trim().toLowerCase();
@@ -1082,45 +1123,125 @@ export default function Home() {
     if (!composing) setQuery(value);
   };
 
+  const matchesSearch = (term: Term) => {
+    const needle = query.trim().toLowerCase();
+    const haystack = [term.zh, term.en, term.description, term.category, term.platform, ...term.aliases].join(" ").toLowerCase();
+    return !needle || haystack.includes(needle);
+  };
+
+  const platformCount = (item: "全部" | Platform) => TERMS.filter((term) => (item === "全部" || term.platform === item) && (category === "全部" || term.category === category) && matchesSearch(term)).length;
+  const categoryCount = (item: "全部" | Category) => TERMS.filter((term) => (item === "全部" || term.category === item) && (platform === "全部" || term.platform === platform) && matchesSearch(term)).length;
+
+  const openPage = (page: PageId) => {
+    logRun("页面导航", "切换页面", {
+      operationId: createOperationId("navigation"),
+      details: { page },
+    });
+    setActivePage(page);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const exportLogs = () => {
+    setLogNotice(downloadDiagnosticLogs() ? "已导出两份日志" : "日志导出失败");
+  };
+
+  const clearLogs = () => {
+    setLogNotice(clearDiagnosticLogs() ? "诊断日志已清空" : "日志清理失败");
+  };
+
   return (
     <main className="site-shell" data-theme={dark ? "dark" : "light"}>
-      <a className="skip-link" href="#atlas">跳到控件图鉴</a>
+      <a className="skip-link" href="#page-content">跳到页面内容</a>
       <header className="site-header">
-        <a className="brand" href="#top" aria-label="返回页面顶部"><span>UI</span><strong>控件与界面术语图鉴</strong></a>
-        <nav aria-label="页面导航"><a href="#atlas">控件图鉴</a><a href="#screens">完整界面</a><a href="#compare">易混对比</a><a href="#sources">资料来源</a></nav>
+        <button type="button" className="brand" onClick={() => openPage("atlas")} aria-label="打开控件图鉴页面"><span>UI</span><strong>控件与界面术语图鉴</strong></button>
+        <nav className="header-tabs" role="tablist" aria-label="主页面标签页">
+          {PAGE_TABS.map((tab, index) => (
+            <button
+              key={tab.id}
+              id={`page-tab-${tab.id}`}
+              type="button"
+              role="tab"
+              aria-selected={activePage === tab.id}
+              aria-controls={tab.id}
+              tabIndex={activePage === tab.id ? 0 : -1}
+              onClick={() => openPage(tab.id)}
+              onKeyDown={(event) => {
+                const lastIndex = PAGE_TABS.length - 1;
+                const nextIndex = event.key === "ArrowRight"
+                  ? (index + 1) % PAGE_TABS.length
+                  : event.key === "ArrowLeft"
+                    ? (index - 1 + PAGE_TABS.length) % PAGE_TABS.length
+                    : event.key === "Home"
+                      ? 0
+                      : event.key === "End"
+                        ? lastIndex
+                        : -1;
+                if (nextIndex < 0) return;
+                event.preventDefault();
+                const nextTab = PAGE_TABS[nextIndex];
+                openPage(nextTab.id);
+                event.currentTarget.parentElement
+                  ?.querySelector<HTMLButtonElement>(`#page-tab-${nextTab.id}`)
+                  ?.focus();
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
         <button className="theme-toggle" onClick={() => setDark(!dark)} aria-label={dark ? "切换为浅色" : "切换为深色"}>{dark ? "☀" : "☾"}</button>
       </header>
 
-      <section className="hero" id="top">
-        <div className="hero-copy"><span className="eyebrow">INTERACTIVE UI ATLAS · 中文版</span><h1>看得见、点得动、说得准的<br /><em>UI 术语图鉴</em></h1><p>从一个按钮，到完整应用窗口。这里把跨平台、Windows 和 Android 的控件、布局区域与系统界面放进同一套可交互分类中。</p></div>
-        <div className="hero-search"><label htmlFor="hero-query">搜索中文名、英文名或常用俗称</label><div><span>⌕</span><input id="hero-query" type="search" value={draftQuery} onCompositionStart={() => setComposing(true)} onCompositionEnd={(event) => { setComposing(false); setQuery(event.currentTarget.value); }} onChange={(event) => handleSearchChange(event.target.value)} placeholder="例如：下拉框、ComboBox、底部工作表" /><button onClick={() => { setDraftQuery(""); setQuery(""); }} disabled={!draftQuery}>清除</button></div><small>试试：按钮、状态栏、Snackbar、属性检查器</small></div>
-        <div className="hero-stats"><div><strong>{TERMS.length}</strong><span>个术语条目</span></div><div><strong>{WINDOWS_REGIONS.length + ANDROID_REGIONS.length + CREATIVE_REGIONS.length}</strong><span>个界面区域</span></div><div><strong>{COMPARISONS.length}</strong><span>组易混对比</span></div></div>
+      <div id="page-content" className="page-content" tabIndex={-1}>
+      {activePage === "atlas" && (
+      <section className="atlas-section" id="atlas" role="tabpanel" aria-labelledby="page-tab-atlas" tabIndex={-1}>
+        <div className="atlas-layout">
+          <aside className="filter-bar" aria-label="控件筛选">
+            <div className="filter-group" role="group" aria-label="按平台筛选"><span>平台</span>{(["全部", "通用", "Windows", "Android"] as const).map((item) => <button key={item} className={platform === item ? "active" : ""} aria-pressed={platform === item} onClick={() => setPlatform(item)}>{item}{showDetails && <small className="filter-count">{platformCount(item)}</small>}</button>)}</div>
+            <label className="filter-search"><span aria-hidden="true">⌕</span><input type="search" value={draftQuery} onCompositionStart={() => setComposing(true)} onCompositionEnd={(event) => { setComposing(false); setQuery(event.currentTarget.value); }} onChange={(event) => handleSearchChange(event.target.value)} placeholder="搜索中文名、英文名或别名" aria-label="搜索控件" />{draftQuery && <button type="button" onClick={() => { setDraftQuery(""); setQuery(""); }} aria-label="清除搜索">清除</button>}</label>
+            <div className="filter-group categories" role="group" aria-label="按分类筛选"><span>分类</span><button className={category === "全部" ? "active" : ""} aria-pressed={category === "全部"} onClick={() => setCategory("全部")}>全部{showDetails && <small className="filter-count">{categoryCount("全部")}</small>}</button>{CATEGORIES.map((item) => <button key={item} className={category === item ? "active" : ""} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}{showDetails && <small className="filter-count">{categoryCount(item)}</small>}</button>)}</div>
+            <label className="count-toggle"><span>详细显示</span><input type="checkbox" checked={showDetails} onChange={(event) => setShowDetails(event.target.checked)} /><i aria-hidden="true" /></label>
+          </aside>
+          <div className="term-results">
+            {filteredTerms.length ? <div className="term-grid">{filteredTerms.map((term) => <TermCard key={term.id} term={term} showDetails={showDetails} />)}</div> : <div className="empty-state"><strong>没有找到匹配控件</strong><p>尝试清除搜索、平台或分类筛选。</p><button onClick={() => { setDraftQuery(""); setQuery(""); setPlatform("全部"); setCategory("全部"); }}>清除全部筛选</button></div>}
+          </div>
+        </div>
       </section>
+      )}
 
-      <section className="atlas-section" id="atlas" tabIndex={-1}>
-        <div className="section-heading"><div><span className="section-index">01</span><h2>控件图鉴</h2><p>每张卡片均提供小型演示；状态只影响自己的示例。</p></div><output aria-live="polite">显示 {filteredTerms.length} / {TERMS.length}</output></div>
-        <div className="filter-bar" aria-label="控件筛选"><div className="filter-group" role="group" aria-label="按平台筛选"><span>平台</span>{(["全部", "通用", "Windows", "Android"] as const).map((item) => <button key={item} className={platform === item ? "active" : ""} aria-pressed={platform === item} onClick={() => setPlatform(item)}>{item}</button>)}</div><div className="filter-group categories" role="group" aria-label="按分类筛选"><span>分类</span><button className={category === "全部" ? "active" : ""} aria-pressed={category === "全部"} onClick={() => setCategory("全部")}>全部</button>{CATEGORIES.map((item) => <button key={item} className={category === item ? "active" : ""} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>)}</div></div>
-        {filteredTerms.length ? <div className="term-grid">{filteredTerms.map((term) => <TermCard key={term.id} term={term} />)}</div> : <div className="empty-state"><strong>没有找到匹配控件</strong><p>尝试清除平台或分类筛选，或者换一个常用叫法。</p><button onClick={() => { setDraftQuery(""); setQuery(""); setPlatform("全部"); setCategory("全部"); }}>清除全部筛选</button></div>}
-      </section>
-
-      <section className="screens-section" id="screens">
+      {activePage === "screens" && (
+      <section className="screens-section" id="screens" role="tabpanel" aria-labelledby="page-tab-screens">
         <div className="section-heading"><div><span className="section-index">02</span><h2>完整界面由什么组成？</h2><p>点击界面中的区域，认识“控件之外”的结构术语。</p></div></div>
         <div className="scene-tabs" role="group" aria-label="完整界面类型"><button aria-pressed={scene === "windows"} onClick={() => setScene("windows")}>Windows 应用窗口</button><button aria-pressed={scene === "android"} onClick={() => setScene("android")}>Android 应用骨架</button><button aria-pressed={scene === "creative"} onClick={() => setScene("creative")}>专业创作软件</button></div>
         <div className="scene-panel">{scene === "windows" ? <WindowsScene /> : scene === "android" ? <AndroidScene /> : <CreativeScene />}</div>
       </section>
+      )}
 
-      <section className="compare-section" id="compare">
+      {activePage === "compare" && (
+      <section className="compare-section" id="compare" role="tabpanel" aria-labelledby="page-tab-compare">
         <div className="section-heading"><div><span className="section-index">03</span><h2>容易混淆的术语</h2><p>展开任意一组，查看最短、最实用的区别。</p></div></div>
         <div className="comparison-grid">{COMPARISONS.map((comparison, index) => <details key={comparison.title} open={index === 0}><summary><span>{String(index + 1).padStart(2, "0")}</span><div><strong>{comparison.title}</strong><small>{comparison.summary}</small></div><i>＋</i></summary><div className="comparison-body">{comparison.items.map(([name, description]) => <article key={name}><strong lang="en">{name}</strong><p>{description}</p></article>)}</div></details>)}</div>
       </section>
+      )}
 
-      <section className="sources-section" id="sources">
+      {activePage === "sources" && (
+      <section className="sources-section" id="sources" role="tabpanel" aria-labelledby="page-tab-sources">
         <div><span className="section-index">04</span><h2>资料来源与使用边界</h2><p>术语优先参考官方目录；本网站的中文说明、交互示例和视觉实现均为原创整理，没有复制官方网站页面。</p></div>
         <div className="source-links">{Object.values(SOURCES).map((source) => <a key={source.label} href={source.href} target="_blank" rel="noreferrer"><strong>{source.label}</strong><span>查看官方资料 ↗</span></a>)}</div>
         <p className="source-note">特别说明：斜线并列的英文名称表示相近概念或平台对应词，不代表它们是同一个 API。Fluent Toolbar 不等同于 WinUI CommandBar，Fluent Message bar 不等同于 WinUI InfoBar，Fluent Toast 也不等同于 Windows App notification；WinUI 3 当前没有第一方内置的 Ribbon、StatusBar 与 DataGrid。页面最后核对日期：2026-08-06。</p>
       </section>
+      )}
+      </div>
 
-      <footer className="site-footer"><strong>UI 控件与界面术语图鉴</strong><span>为中文设计、开发与提示词写作整理</span><a href="#top">回到顶部 ↑</a></footer>
+      <footer className="site-footer">
+        <div><strong>UI 控件与界面术语图鉴</strong><span>为中文设计、开发与提示词写作整理</span></div>
+        <output aria-live="polite">{logNotice}</output>
+        <div className="footer-actions">
+          <button type="button" onClick={exportLogs}>导出诊断日志</button>
+          <button type="button" onClick={clearLogs}>清空诊断日志</button>
+          <button type="button" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>回到顶部 ↑</button>
+        </div>
+      </footer>
     </main>
   );
 }
