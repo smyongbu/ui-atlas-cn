@@ -122,6 +122,12 @@ test("源码保留足量术语、中文输入法处理和无障碍样式", async
   assert.match(page, /WINDOWS_REGIONS/);
   assert.match(page, /ANDROID_REGIONS/);
   assert.match(page, /CREATIVE_REGIONS/);
+  assert.match(page, /所选区域包含的元素/);
+  assert.match(page, /WINDOWS_REGION_ELEMENTS/);
+  assert.match(page, /文本填写框/);
+  assert.doesNotMatch(page, /本界面包含的区域/);
+  assert.match(css, /\.region-elements/);
+  assert.doesNotMatch(css, /\.region-choices/);
   assert.match(css, /prefers-reduced-motion/);
   assert.match(css, /forced-colors/);
   assert.match(css, /:focus-visible/);

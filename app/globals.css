@@ -2715,16 +2715,20 @@ progress {
   line-height: 1.5;
 }
 
-.region-choices {
+.region-elements {
   display: flex;
   max-height: 170px;
   flex-wrap: wrap;
   gap: 6px;
   margin-top: 16px;
+  padding: 0;
+  list-style: none;
   overflow: auto;
 }
 
-.region-choices button {
+.region-elements li {
+  display: grid;
+  gap: 2px;
   min-height: 36px;
   padding: 6px 9px;
   border: 1px solid var(--line);
@@ -2733,10 +2737,22 @@ progress {
   font-size: 12px;
 }
 
-.region-choices button[aria-pressed="true"] {
-  border-color: var(--accent);
-  color: white;
-  background: var(--accent);
+.region-elements strong {
+  font-size: 12px;
+}
+
+.region-elements span {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.region-empty {
+  margin-top: 16px !important;
+  padding: 10px 12px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 8px;
+  font-size: 12px;
 }
 
 .windows-scene,

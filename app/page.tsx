@@ -998,6 +998,8 @@ function TermCard({ term, showDetails }: { term: Term; showDetails: boolean }) {
 }
 
 type Region = { id: string; zh: string; en: string; description: string };
+type RegionElement = { zh: string; en: string };
+type RegionElementMap = Record<string, RegionElement[]>;
 
 const WINDOWS_REGIONS: Region[] = [
   { id: "frame", zh: "应用窗口", en: "Application window", description: "承载应用界面的顶层窗口。" },
@@ -1046,8 +1048,54 @@ const CREATIVE_REGIONS: Region[] = [
   { id: "status", zh: "状态区", en: "Status area", description: "显示缩放比例、坐标、选择数量等上下文信息。" },
 ];
 
-function RegionInfo({ region, regions, onSelect }: { region: Region; regions: Region[]; onSelect: (id: string) => void }) {
-  return <aside className="region-info"><span>当前术语</span><div role="status" aria-live="polite" aria-atomic="true"><h3>{region.zh}</h3><p className="english" lang="en">{region.en}</p><p>{region.description}</p></div><small>点击界面区域，或使用下列文字索引继续认识术语。</small><nav className="region-choices" aria-label="本界面包含的区域">{regions.map((item) => <button key={item.id} aria-pressed={item.id === region.id} onClick={() => onSelect(item.id)}>{item.zh}</button>)}</nav></aside>;
+const WINDOWS_REGION_ELEMENTS: RegionElementMap = {
+  frame: [{ zh: "窗口框架", en: "Window frame" }, { zh: "客户区", en: "Client area" }, { zh: "状态栏", en: "Status area" }],
+  "window-frame": [{ zh: "标题栏", en: "Title bar" }, { zh: "调整大小边框", en: "Resize border" }],
+  nonclient: [{ zh: "应用图标", en: "App icon" }, { zh: "窗口标题", en: "Window title" }, { zh: "拖动区域", en: "Drag region" }, { zh: "标题栏按钮", en: "Caption buttons" }],
+  client: [{ zh: "菜单栏", en: "Menu bar" }, { zh: "命令栏", en: "Command bar" }, { zh: "导航窗格", en: "Navigation pane" }, { zh: "主内容区", en: "Main content" }, { zh: "属性检查器", en: "Property inspector" }],
+  titlebar: [{ zh: "应用图标", en: "App icon" }, { zh: "窗口标题", en: "Window title" }, { zh: "拖动区域", en: "Drag region" }, { zh: "标题栏按钮", en: "Caption buttons" }],
+  "app-icon": [], "window-title": [], "drag-region": [], "resize-border": [],
+  caption: [{ zh: "最小化按钮", en: "Minimize button" }, { zh: "最大化/还原按钮", en: "Maximize / Restore button" }, { zh: "关闭按钮", en: "Close button" }],
+  "app-shell": [{ zh: "标题栏", en: "Title bar" }, { zh: "菜单栏", en: "Menu bar" }, { zh: "命令栏", en: "Command bar" }, { zh: "导航窗格", en: "Navigation pane" }, { zh: "页面宿主", en: "Page host" }, { zh: "状态栏", en: "Status area" }],
+  menubar: [{ zh: "菜单项", en: "Menu item" }],
+  commandbar: [{ zh: "命令按钮", en: "Command button" }, { zh: "溢出按钮", en: "Overflow button" }],
+  navpane: [{ zh: "导航项", en: "Navigation item" }],
+  breadcrumb: [{ zh: "面包屑项", en: "Breadcrumb item" }],
+  "page-header": [{ zh: "页面标题", en: "Page title" }],
+  "page-host": [{ zh: "面包屑栏", en: "Breadcrumb bar" }, { zh: "页面标题区", en: "Page header" }, { zh: "主内容区", en: "Main content" }],
+  content: [{ zh: "面包屑", en: "Breadcrumb" }, { zh: "页面标题", en: "Page title" }, { zh: "内容卡片", en: "Content card" }, { zh: "按钮", en: "Button" }],
+  inspector: [{ zh: "分区标题", en: "Section heading" }, { zh: "字段标签", en: "Field label" }, { zh: "文本填写框", en: "Text input" }, { zh: "下拉选择框", en: "Select" }],
+  "details-pane": [{ zh: "详情字段", en: "Detail field" }, { zh: "属性值", en: "Property value" }],
+  footer: [{ zh: "状态文本", en: "Status text" }, { zh: "缩放指示", en: "Zoom indicator" }],
+};
+
+const ANDROID_REGION_ELEMENTS: RegionElementMap = {
+  appwindow: [{ zh: "状态栏", en: "Status bar" }, { zh: "顶部应用栏", en: "Top app bar" }, { zh: "内容区", en: "Content area" }, { zh: "应用导航栏", en: "Navigation bar" }, { zh: "系统导航栏", en: "System navigation bar" }],
+  statusbar: [{ zh: "时间", en: "Time" }, { zh: "系统状态图标", en: "System status icons" }],
+  topbar: [{ zh: "导航按钮", en: "Navigation button" }, { zh: "页面标题", en: "Page title" }, { zh: "操作按钮", en: "Action button" }],
+  scaffold: [{ zh: "顶部应用栏", en: "Top app bar" }, { zh: "内容区", en: "Content area" }, { zh: "悬浮操作按钮", en: "Floating action button" }, { zh: "Snackbar 宿主", en: "Snackbar host" }, { zh: "应用导航栏", en: "Navigation bar" }],
+  content: [{ zh: "内容卡片", en: "Content card" }, { zh: "图标", en: "Icon" }, { zh: "标题文字", en: "Title text" }, { zh: "正文", en: "Body text" }],
+  fab: [{ zh: "图标", en: "Icon" }],
+  snackbar: [{ zh: "反馈文字", en: "Feedback text" }, { zh: "操作按钮", en: "Action button" }],
+  navbar: [{ zh: "导航项", en: "Navigation item" }, { zh: "导航图标", en: "Navigation icon" }, { zh: "导航标签", en: "Navigation label" }],
+  systemnav: [{ zh: "手势柄", en: "Gesture handle" }],
+};
+
+const CREATIVE_REGION_ELEMENTS: RegionElementMap = {
+  "app-shell": [{ zh: "菜单", en: "Menu" }, { zh: "文档标签栏", en: "Document tab strip" }, { zh: "工具箱", en: "Toolbox" }, { zh: "画布", en: "Canvas" }, { zh: "侧边面板", en: "Side panel" }, { zh: "时间轴", en: "Timeline" }, { zh: "状态区", en: "Status area" }],
+  "document-tabs": [{ zh: "文档标签", en: "Document tab" }, { zh: "新建按钮", en: "New button" }, { zh: "关闭按钮", en: "Close button" }],
+  toolbox: [{ zh: "工具按钮", en: "Tool button" }],
+  canvas: [{ zh: "画布对象", en: "Canvas object" }, { zh: "选择框", en: "Selection box" }, { zh: "文字对象", en: "Text object" }],
+  layers: [{ zh: "图层项", en: "Layer item" }, { zh: "可见性按钮", en: "Visibility button" }],
+  inspector: [{ zh: "字段标签", en: "Field label" }, { zh: "数值填写框", en: "Number input" }],
+  timeline: [{ zh: "播放按钮", en: "Play button" }, { zh: "轨道", en: "Track" }, { zh: "播放头", en: "Playhead" }],
+  status: [{ zh: "选择状态", en: "Selection status" }, { zh: "缩放指示", en: "Zoom indicator" }, { zh: "画布尺寸", en: "Canvas size" }],
+};
+
+function RegionInfo({ region, regions }: { region: Region; regions: Region[]; onSelect: (id: string) => void }) {
+  const elementMap = regions === WINDOWS_REGIONS ? WINDOWS_REGION_ELEMENTS : regions === ANDROID_REGIONS ? ANDROID_REGION_ELEMENTS : CREATIVE_REGION_ELEMENTS;
+  const elements = elementMap[region.id] ?? [];
+  return <aside className="region-info"><span>当前术语</span><div role="status" aria-live="polite" aria-atomic="true"><h3>{region.zh}</h3><p className="english" lang="en">{region.en}</p><p>{region.description}</p></div><small>所选区域包含的元素</small>{elements.length > 0 ? <ul className="region-elements" aria-label={`${region.zh}包含的元素`}>{elements.map((item) => <li key={`${item.zh}-${item.en}`}><strong>{item.zh}</strong><span lang="en">{item.en}</span></li>)}</ul> : <p className="region-empty">这个区域在当前示例中没有更细的可识别元素。</p>}</aside>;
 }
 
 function WindowsScene() {
