@@ -28,6 +28,13 @@ pnpm lint
 pnpm test
 ```
 
+## 线上版本
+
+- 正式网址：<https://ui.215656.xyz>
+- Cloudflare Pages 项目：`ui-design-atlas`
+- 源码仓库：GitHub 私有仓库 `smyongbu/ui-atlas-cn`
+- 日常发布目标为推送 `main` 后由 Cloudflare 自动构建；2026-08-14 的新版在 Git 集成尚未接通时使用本机直传完成恢复性发布。
+
 ## 诊断日志
 
 - 网页会在当前浏览器的本地存储中分别保留运行日志和错误日志，不会上传日志。
